@@ -48,6 +48,7 @@ int mode = MAIN;
 
 ProgramSegment program[64];
 int nsegments = 2;
+int editing_segment = 0;
 
 SAppMenu menu, program_menu, setup_menu, segment_menu;
 const char *menu_items[] = {
@@ -162,7 +163,6 @@ void pid_control() {
   lastcheck = millis();
 }
 
-// screen handlers: these get called once per loop, when that screen is being displayed
 void main_display() {
   static unsigned long lasthash;
 
@@ -254,14 +254,20 @@ void program_menu_display() {
     int sel = ssd1306_menuSelection(&program_menu);
     // sel=1..N are segments if N segments exist, first one is run/stop, and the final 2 options are "add segment" and "clear program"
     if (sel == 0) { // Run/Abort
-      
+      // TODO: this
     } else if (sel <= nsegments) {
-      setup_segment_menu(&(program[sel-1]), 0);
+      setup_segment_menu(sel-1);
       mode = SEGMENT;
     } else if (sel == nsegments+1) { // add segment
-      setup_segment_menu(&(program[nsegments]), 1);
+      program[nsegments].type = STEP;
+      program[nsegments].target = 100;
+      setup_segment_menu(nsegments);
       mode = SEGMENT;
     } else { // clear program
+      // TODO: "are you sure?"
+      nsegments = 0;
+      setup_program_menu();
+      program_menu.selection = 1;
     }
   }
   if (buttonpress[CANCEL]) {
@@ -292,6 +298,7 @@ void setup_menu_display() {
   if (buttonpress[OK]) {
     redraw = 1;
     int sel = ssd1306_menuSelection(&setup_menu);
+    // TODO: interact with setup menu
   }
   if (buttonpress[CANCEL]) {
     redraw = 1;
@@ -321,6 +328,28 @@ void segment_menu_display() {
   if (buttonpress[OK]) {
     redraw = 1;
     int sel = ssd1306_menuSelection(&segment_menu);
+    if (sel == 0) { // type
+      program[editing_segment].type = !program[editing_segment].type;
+      setup_segment_menu(editing_segment);
+      segment_menu.selection = sel;
+    } else if (sel == 1) { // target
+      // TODO: enter a mode where you can edit the number with up/down
+    } else if (sel == 2) { // time
+      // TODO: enter a mode where you can edit the number with up/down
+    } else { // add/remove
+      int added_segment = 0;
+      if (editing_segment == nsegments) { // add
+        added_segment = 1;
+        nsegments++;
+      } else { // remove
+        // TODO: shuffle all the other segments along so that we just delete this from the middle
+        nsegments--;
+      }
+      redraw = 1;
+      setup_program_menu();
+      program_menu.selection = added_segment ? nsegments+1 : editing_segment+1;
+      mode = PROGRAM;
+    }
   }
   if (buttonpress[CANCEL]) {
     redraw = 1;
@@ -336,6 +365,7 @@ void setup_program_menu() {
   }
   program_menu_items[nsegments+1] = "Add segment";
   program_menu_items[nsegments+2] = "Clear program";
+  
   ssd1306_createMenu(&program_menu, program_menu_items, nsegments+3);
 }
 
@@ -351,10 +381,19 @@ void setup_setup_menu() {
   ssd1306_createMenu(&setup_menu, setup_menu_items, 7);
 }
 
-void setup_segment_menu(ProgramSegment *seg, int new_seg) {
-  segment_menu_items[0] = "Type:    ramp";
-  segment_menu_items[1] = "Target:  300";
-  segment_menu_items[2] = "Time:    1h30";
-  segment_menu_items[3] = new_seg ? "Add" : "Remove";
+void setup_segment_menu(int seg) {
+  static char buftype[16], buftarget[16], buftime[16];
+  
+  sprintf(buftype, "Type:    %s", program[seg].type == RAMP ? "ramp" : "step");
+  sprintf(buftarget, "Target:  %d", program[seg].target);
+  sprintf(buftime, "Time:    1h30");
+  
+  segment_menu_items[0] = buftype;
+  segment_menu_items[1] = buftarget;
+  segment_menu_items[2] = buftime;
+  segment_menu_items[3] = seg == nsegments ? "Add" : "Remove";
+
+  editing_segment = seg;
+  
   ssd1306_createMenu(&segment_menu, segment_menu_items, 4);
 }
