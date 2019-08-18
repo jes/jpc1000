@@ -111,6 +111,7 @@ void load_config() {
   EEPROM.get(20, min_time);
   EEPROM.get(24, setpoint);
   EEPROM.get(28, nsegments);
+  EEPROM.get(29, manual_control);
   for (int i = 0; i < MAXSEGMENTS; i++) {
     EEPROM.get(30 + (i*7) + 0, program[i].type);
     EEPROM.get(30 + (i*7) + 1, program[i].target);
@@ -128,6 +129,7 @@ void save_config() {
   EEPROM.put(20, min_time);
   EEPROM.put(24, setpoint);
   EEPROM.put(28, nsegments);
+  EEPROM.put(29, manual_control);
   for (int i = 0; i < MAXSEGMENTS; i++) {
     EEPROM.put(30 + (i*7) + 0, program[i].type);
     EEPROM.put(30 + (i*7) + 1, program[i].target);
@@ -364,16 +366,17 @@ void setup_menu_display() {
       case 5: // show state
         break;
       case 6: // manual control
+        manual_control = !manual_control;
         break;
       case 7: // reset all
         // TODO: are you sure?
         EEPROM.put(0, 0); // overwrite magic number with 0 so that we re-initialise with defaults
         load_config();
-        setup_setup_menu();
-        setup_menu.selection = 7;
-        redraw = 1;
         break;
     }
+    redraw = 1;
+    setup_setup_menu();
+    setup_menu.selection = sel;
   }
   if (buttonpress[CANCEL]) {
     redraw = 1;
@@ -453,7 +456,7 @@ void setup_program_menu() {
 }
 
 void setup_setup_menu() {
-  static char bufkp[16], bufti[16], buftd[16], bufcycletime[16], bufmintime[16], bufshowstate[16], bufmanual[24];
+  static char bufkp[16], bufti[16], buftd[16], bufcycletime[24], bufmintime[24], bufshowstate[16], bufmanual[24];
   
   sprintf(bufkp, "Kp: %s", ftoa(k_p));
   sprintf(bufti, "Ti: %s", timetoa(t_i*1000));
@@ -461,7 +464,7 @@ void setup_setup_menu() {
   sprintf(bufcycletime, "Cyc time: %s", timetoa(cycle_time));
   sprintf(bufmintime, "Min time: %s", timetoa(min_time));
   sprintf(bufshowstate, "Show state: off");
-  sprintf(bufmanual, "Manual control: off");
+  sprintf(bufmanual, "Manual control: %s", manual_control ? "on" : "off");
 
   setup_menu_items[0] = bufkp;
   setup_menu_items[1] = bufti;
