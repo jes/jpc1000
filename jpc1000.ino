@@ -52,12 +52,15 @@ char lastbuttonstate[4];
 char button[4];
 char buttonpress[4];
 char mode = MAIN;
+char run_program;
+unsigned long program_started;
 
 char was_editing;
 float editnumber_scale;
 float editnumber_initial;
 float editnumber_val;
 char editnumber_mode;
+char editnumber_time;
 char *editnumber_msg;
 const int editnumber_repeat_ms = 100; // ms
 
@@ -155,7 +158,7 @@ void loop() {
   if (cur_temp < min_temp || cur_temp > max_temp)
     safe_to_operate = 0;
   // TODO: if heater has been on for a while and temperature hasn't risen, assume thermocouple dislodged and set not-safe-to-operate
-
+  
   if (safe_to_operate) {
     if (!manual_control)
       pid_control();
@@ -168,6 +171,10 @@ void loop() {
     heater(cycle_offset < ontime);
   } else {
     heater(0);
+  }
+
+  if (run_program) {
+    // TODO: update setpoint as per program
   }
 
   read_buttons();
@@ -331,7 +338,11 @@ void program_menu_display() {
     int sel = ssd1306_menuSelection(&program_menu);
     // sel=1..N are segments if N segments exist, first one is run/stop, and the final 2 options are "add segment" and "clear program"
     if (sel == 0) { // Run/Abort
-      // TODO: this
+      run_program = !run_program;
+      if (run_program)
+        program_started = millis();
+      mode = MAIN;
+      redraw = 1;
     } else if (sel <= nsegments) {
       setup_segment_menu(sel-1);
       mode = SEGMENT;
@@ -353,7 +364,7 @@ void program_menu_display() {
   }
   if (buttonpress[CANCEL]) {
     redraw = 1;
-    mode = MENU;
+    mode = MAIN;
   }
 }
 
@@ -423,7 +434,7 @@ void setup_menu_display() {
   }
   if (buttonpress[CANCEL]) {
     redraw = 1;
-    mode = MENU;
+    mode = MAIN;
   }
 }
 
@@ -436,6 +447,9 @@ void segment_menu_display() {
     switch (was_editing) {
       case EDIT_TARGET:
         program[editing_segment].target = editnumber_val;
+        break;
+      case EDIT_SEGTIME:
+        program[editing_segment].duration = editnumber_val / 1000;
         break;
     }
     int sel = segment_menu.selection;
@@ -474,6 +488,8 @@ void segment_menu_display() {
       redraw = 1;
     } else if (sel == 2) { // time
       // TODO: enter a mode where you can edit the time with up/down
+      edit_number(EDIT_SEGTIME, program[editing_segment].duration*1000, 1, "Edit time:");
+      editnumber_time = 1;
     } else if (sel == 3) { // add/save
       int added_segment = 0;
       if (editing_segment == nsegments) { // add
@@ -505,11 +521,25 @@ void editnumber_display() {
   static char redraw = 1, buttonheld = -1;
   static unsigned long heldsince;
   static int donesteps;
+  static float stepmult = 1;
 
   for (int i = UP; i <= DOWN; i++) {
-    int dir = i == UP ? 1 : -1;
+    int dir = (i == UP) ? 1 : -1;
+
+    float onestep = dir;
+    if (editnumber_time) {
+      if (fabs(editnumber_val / editnumber_scale) >= 86400000)
+        onestep = dir * 3600000;
+      else if (fabs(editnumber_val / editnumber_scale) >= 3600000)
+        onestep = dir * 60000;
+      else if (fabs(editnumber_val / editnumber_scale) >= 10000)
+        onestep = dir * 1000;
+      else
+        onestep = dir * 100;
+    }
+    
     if (buttonpress[i]) {
-      editnumber_val += dir;
+      editnumber_val += onestep;
       redraw = 1;
     }
   
@@ -518,6 +548,7 @@ void editnumber_display() {
         buttonheld = i;
         heldsince = millis();
         donesteps = 5;
+        stepmult = onestep;
       }
       int heldsteps = (millis()-heldsince) / editnumber_repeat_ms;
       int stepsize = 1;
@@ -531,7 +562,7 @@ void editnumber_display() {
         stepsize = 5;
       // TODO: snap to round numbers
       if (heldsteps > donesteps) {
-        editnumber_val += dir * stepsize;
+        editnumber_val += stepsize * stepmult;
         donesteps++;
         redraw = 1;
       }
@@ -545,10 +576,10 @@ void editnumber_display() {
     ssd1306_drawRect(4, 4, 123, 59);
     ssd1306_setFixedFont(ssd1306xled_font6x8);
     ssd1306_printFixed(8,8, editnumber_msg, STYLE_NORMAL);
-    ssd1306_printFixed(8,24, ftoa(editnumber_val / editnumber_scale), STYLE_NORMAL);
+    ssd1306_printFixed(8,24, editnumber_time ? timetoa(editnumber_val / editnumber_scale) : ftoa(editnumber_val / editnumber_scale), STYLE_NORMAL);
     if (editnumber_val != editnumber_initial) {
       ssd1306_printFixed(8,40, "was", STYLE_NORMAL);
-      ssd1306_printFixed(32,40, ftoa(editnumber_initial / editnumber_scale), STYLE_NORMAL);
+      ssd1306_printFixed(32,40, editnumber_time ? timetoa(editnumber_initial / editnumber_scale) : ftoa(editnumber_initial / editnumber_scale), STYLE_NORMAL);
     }
     redraw = 0;
   }
@@ -573,13 +604,14 @@ void edit_number(char edittype, float val, float scale, char *msg) {
   editnumber_scale = scale;
   editnumber_mode = mode;
   editnumber_msg = msg;
+  editnumber_time = 0;
   mode = EDITNUMBER;
 }
 
 void setup_program_menu() {
   static char buf[MAXSEGMENTS][24];
   
-  program_menu_items[0] = "Run";
+  program_menu_items[0] = run_program ? "Stop" : "Run";
   for (int i = 0; i < nsegments; i++) {
     sprintf(buf[i], "%d. %s %d %s", i+1, program[i].type == RAMP ? "ramp" : "step", program[i].target, timetoa(program[i].duration*1000));
     program_menu_items[i+1] = buf[i];
