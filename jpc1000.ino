@@ -33,9 +33,9 @@ typedef void (*ScreenHandlerFunc)(void);
 
 const float min_temp = 5;
 const float max_temp = 1150;
-const int heater_pin = 10;
+const char heater_pin = 10;
 const int debounce_delay = 50; // ms
-const int buttonpin[4] = { 8, 7, 6, 9 };
+const char buttonpin[4] = { 8, 7, 6, 9 };
 
 // don't edit these here, they get initialised in load_config()
 float k_p, t_i, t_d; // PID parameters
@@ -44,17 +44,17 @@ unsigned long min_time;
 float dutycycle;
 float setpoint;
 float cur_temp;
-int heater_state;
-int manual_control;
+char heater_state;
+char manual_control;
 unsigned long debouncetime[4];
-int lastbuttonstate[4];
-int button[4];
-int buttonpress[4];
-int mode = MAIN;
+char lastbuttonstate[4];
+char button[4];
+char buttonpress[4];
+char mode = MAIN;
 
 ProgramSegment program[MAXSEGMENTS];
-int nsegments = 0;
-int editing_segment = 0;
+char nsegments = 0;
+char editing_segment = 0;
 
 SAppMenu menu, program_menu, setup_menu, segment_menu;
 const char *menu_items[] = {
