@@ -29,7 +29,7 @@ typedef struct ProgramSegment {
 enum segment_types { RAMP = 0, STEP };
 enum display_modes { MAIN = 0, MENU, PROGRAM, SETUP, SEGMENT, EDITNUMBER, EDITTIME };
 enum input_buttons { UP = 0, DOWN, OK, CANCEL };
-enum edit_values { EDIT_KP = 1, EDIT_TI, EDIT_TD, EDIT_CYCTIME, EDIT_MINTIME, EDIT_TARGET, EDIT_SEGTIME };
+enum edit_values { EDIT_KP = 1, EDIT_TI, EDIT_TD, EDIT_CYCTIME, EDIT_MINTIME, EDIT_TARGET, EDIT_SEGTIME, EDIT_SETPOINT };
 typedef void (*ScreenHandlerFunc)(void);
 
 const float min_temp = 5;
@@ -227,6 +227,24 @@ void pid_control() {
 void main_display() {
   static unsigned long lasthash;
 
+  // TODO: if (manual_control) then editing is editing dutycycle instead of setpoint
+
+  if (was_editing) {
+    setpoint = editnumber_val;
+    save_config();
+    lasthash = 0;
+    was_editing = 0;
+  }
+
+  if (buttonpress[UP]) {
+    edit_number(EDIT_SETPOINT, setpoint+1, 1, "Edit setpoint:");
+    editnumber_initial = setpoint;
+  }
+  if (buttonpress[DOWN]) {
+    edit_number(EDIT_SETPOINT, setpoint-1, 1, "Edit setpoint:");
+    editnumber_initial = setpoint;
+  }
+
   // rendering
   unsigned long screen_hash = 10*(int)cur_temp + 2*(int)setpoint + heater_state + 1;
   if (screen_hash != lasthash) {
@@ -250,7 +268,6 @@ void main_display() {
     lasthash = 0;
     mode = MENU;
   }
-  // TODO: up/down buttons alter setpoint, cancel button?
 }
 
 void menu_display() {
