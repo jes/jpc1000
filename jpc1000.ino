@@ -61,7 +61,7 @@ const char *menu_items[] = {
 };
 char *program_menu_items[MAXSEGMENTS];
 char *setup_menu_items[8];
-char *segment_menu_items[4];
+char *segment_menu_items[5];
 
 // prototypes & array of screen handler functions:
 void main_display(void);
@@ -404,19 +404,24 @@ void segment_menu_display() {
       // TODO: enter a mode where you can edit the number with up/down
     } else if (sel == 2) { // time
       // TODO: enter a mode where you can edit the number with up/down
-    } else { // add/remove
+    } else if (sel == 3) { // add/save
       int added_segment = 0;
       if (editing_segment == nsegments) { // add
         added_segment = 1;
         nsegments++;
-      } else { // remove
-        // TODO: shift all the other segments along so that we just delete this one from the middle
-        nsegments--;
       }
       save_config();
       redraw = 1;
       setup_program_menu();
       program_menu.selection = added_segment ? nsegments+1 : editing_segment+1;
+      mode = PROGRAM;
+    } else { // remove
+      nsegments--;
+      // TODO: shift other segments along
+      save_config();
+      redraw = 1;
+      setup_program_menu();
+      program_menu.selection = editing_segment+1;
       mode = PROGRAM;
     }
   }
@@ -431,7 +436,7 @@ void setup_program_menu() {
   
   program_menu_items[0] = "Run";
   for (int i = 0; i < nsegments; i++) {
-    sprintf(buf[i], "%d. %s %d 1h30", i+1, program[i].type == RAMP ? "ramp" : "step", program[i].target);
+    sprintf(buf[i], "%d. %s %d %s", i+1, program[i].type == RAMP ? "ramp" : "step", program[i].target, timetoa(program[i].duration*1000));
     program_menu_items[i+1] = buf[i];
   }
   program_menu_items[nsegments+1] = "Add segment";
@@ -441,13 +446,23 @@ void setup_program_menu() {
 }
 
 void setup_setup_menu() {
-  setup_menu_items[0] = "Kp: 4";
-  setup_menu_items[1] = "Ti: 3";
-  setup_menu_items[2] = "Td: 0.1";
-  setup_menu_items[3] = "Cyc. time: 4s";
-  setup_menu_items[4] = "Min. time: 5s";
-  setup_menu_items[5] = "Show state: on";
-  setup_menu_items[6] = "Manual control: off";
+  static char bufkp[16], bufti[16], buftd[16], bufcycletime[16], bufmintime[16], bufshowstate[16], bufmanual[24];
+  
+  sprintf(bufkp, "Kp: %s", ftoa(k_p));
+  sprintf(bufti, "Ti: %s", timetoa(t_i*1000));
+  sprintf(buftd, "Td: %s", timetoa(t_d*1000));
+  sprintf(bufcycletime, "Cyc. time: %s", timetoa(cycle_time*1000));
+  sprintf(bufmintime, "Min. time: %s", timetoa(5000));
+  sprintf(bufshowstate, "Show state: off");
+  sprintf(bufmanual, "Manual control: off");
+
+  setup_menu_items[0] = bufkp;
+  setup_menu_items[1] = bufti;
+  setup_menu_items[2] = buftd;
+  setup_menu_items[3] = bufcycletime;
+  setup_menu_items[4] = bufmintime;
+  setup_menu_items[5] = bufshowstate;
+  setup_menu_items[6] = bufmanual;
   setup_menu_items[7] = "Reset all";
   
   ssd1306_createMenu(&setup_menu, setup_menu_items, 8);
@@ -458,14 +473,52 @@ void setup_segment_menu(int seg) {
   
   sprintf(buftype, "Type:    %s", program[seg].type == RAMP ? "ramp" : "step");
   sprintf(buftarget, "Target:  %d", program[seg].target);
-  sprintf(buftime, "Time:    1h30");
+  sprintf(buftime, "Time:    %s", timetoa(program[seg].duration*1000));
   
   segment_menu_items[0] = buftype;
   segment_menu_items[1] = buftarget;
   segment_menu_items[2] = buftime;
-  segment_menu_items[3] = seg == nsegments ? "Add" : "Remove";
+  segment_menu_items[3] = seg == nsegments ? "Add" : "Save";
+  segment_menu_items[4] = "Remove";
 
   editing_segment = seg;
   
-  ssd1306_createMenu(&segment_menu, segment_menu_items, 4);
+  ssd1306_createMenu(&segment_menu, segment_menu_items, 4+(seg<nsegments));
+}
+
+// format "f" as a string, return pointer to static buffer
+// formatted as integer if >= 10, or 1 decimal place if < 10
+char *ftoa(float f) {
+  static char buf[16];
+  char *p = buf;
+  
+  if (f < 0) {
+    *p++ = '-';
+    f = -f;
+  }
+
+  if (f >= 10) {
+    sprintf(p, "%d", (int)f);
+  } else {
+    sprintf(p, "%d.%d", (int)f, ((int)(f*10))%10);
+  }
+
+  return buf;
+}
+
+// format "ms" as a string, return pointer to static buffer
+char *timetoa(unsigned long ms) {
+  static char buf[16];
+
+  if (ms >= 86400000) {
+    sprintf(buf, "%dd%02dh", ms/86400000, (ms%86400000)/3600000);
+  } else if (ms >= 3600000) {
+    sprintf(buf, "%dh%02dm", ms/3600000, (ms%3600000)/60000);
+  } else if (ms >= 60000) {
+    sprintf(buf, "%dm%02ds", ms/60000, (ms%60000)/1000);
+  } else {
+    sprintf(buf, "%ss", ftoa(((float)ms)/1000));
+  }
+  
+  return buf;
 }
