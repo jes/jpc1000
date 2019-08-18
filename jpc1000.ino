@@ -27,8 +27,9 @@ typedef struct ProgramSegment {
 } ProgramSegment;
 
 enum segment_types { RAMP = 0, STEP };
-enum display_modes { MAIN = 0, MENU, PROGRAM, SETUP, SEGMENT };
+enum display_modes { MAIN = 0, MENU, PROGRAM, SETUP, SEGMENT, EDITNUMBER, EDITTIME };
 enum input_buttons { UP = 0, DOWN, OK, CANCEL };
+enum edit_values { EDIT_KP = 1, EDIT_TI, EDIT_TD, EDIT_CYCTIME, EDIT_MINTIME, EDIT_TARGET, EDIT_SEGTIME };
 typedef void (*ScreenHandlerFunc)(void);
 
 const float min_temp = 5;
@@ -52,6 +53,13 @@ char button[4];
 char buttonpress[4];
 char mode = MAIN;
 
+char was_editing;
+float editnumber_scale;
+float editnumber_initial;
+float editnumber_val;
+char editnumber_mode;
+char *editnumber_msg;
+
 ProgramSegment program[MAXSEGMENTS];
 char nsegments = 0;
 char editing_segment = 0;
@@ -70,8 +78,9 @@ void menu_display(void);
 void program_menu_display(void);
 void setup_menu_display(void);
 void segment_menu_display(void);
+void editnumber_display(void);
 ScreenHandlerFunc screen_handler[] = {
-  main_display, menu_display, program_menu_display, setup_menu_display, segment_menu_display,
+  main_display, menu_display, program_menu_display, setup_menu_display, segment_menu_display, editnumber_display,
 };
 
 void setup() {
@@ -245,7 +254,7 @@ void main_display() {
 }
 
 void menu_display() {
-  static unsigned long redraw = 1;
+  static char redraw = 1;
 
   if (buttonpress[UP]) {
     redraw = 1;
@@ -281,7 +290,7 @@ void menu_display() {
 }
 
 void program_menu_display() {
-  static unsigned long redraw = 1;
+  static char redraw = 1;
 
   if (buttonpress[UP]) {
     redraw = 1;
@@ -331,7 +340,21 @@ void program_menu_display() {
 }
 
 void setup_menu_display() {
-  static unsigned long redraw = 1;
+  static char redraw = 1;
+
+  if (was_editing) {
+    switch (was_editing) {
+      case EDIT_KP:
+        k_p = editnumber_val;
+        break;
+    }
+    save_config();
+    int sel = setup_menu.selection;
+    setup_setup_menu();
+    setup_menu.selection = sel;
+    was_editing = 0;
+    redraw = 1;
+  }
 
   if (buttonpress[UP]) {
     redraw = 1;
@@ -354,6 +377,8 @@ void setup_menu_display() {
     int sel = ssd1306_menuSelection(&setup_menu);
     switch (sel) {
       case 0: // k_p
+        edit_number(EDIT_KP, k_p, 1, "Edit Kp:");
+        redraw = 1;
         break;
       case 1: // t_i
         break;
@@ -385,7 +410,22 @@ void setup_menu_display() {
 }
 
 void segment_menu_display() {
-  static unsigned long redraw = 1;
+  static char redraw = 1;
+
+  // TODO: edit on a copy of the segment, and only commit it if it actually gets saved, so that we don't accidentally save unsaved changes
+
+  if (was_editing) {
+    switch (was_editing) {
+      case EDIT_TARGET:
+        program[editing_segment].target = editnumber_val;
+        break;
+    }
+    int sel = segment_menu.selection;
+    setup_segment_menu(editing_segment);
+    segment_menu.selection = sel;
+    was_editing = 0;
+    redraw = 1;
+  }
 
   if (buttonpress[UP]) {
     redraw = 1;
@@ -412,8 +452,10 @@ void segment_menu_display() {
       segment_menu.selection = sel;
     } else if (sel == 1) { // target
       // TODO: enter a mode where you can edit the number with up/down
+      edit_number(EDIT_TARGET, program[editing_segment].target, 1, "Edit target:");
+      redraw = 1;
     } else if (sel == 2) { // time
-      // TODO: enter a mode where you can edit the number with up/down
+      // TODO: enter a mode where you can edit the time with up/down
     } else if (sel == 3) { // add/save
       int added_segment = 0;
       if (editing_segment == nsegments) { // add
@@ -439,6 +481,56 @@ void segment_menu_display() {
     redraw = 1;
     mode = PROGRAM;
   }
+}
+
+void editnumber_display() {
+  static char redraw = 1;
+
+  // TODO: when button is held down, move the value faster
+
+  if (buttonpress[UP]) {
+    editnumber_val += editnumber_scale;
+    redraw = 1;
+  }
+  if (buttonpress[DOWN]) {
+    editnumber_val -= editnumber_scale;
+    redraw = 1;
+  }
+
+  if (redraw) {
+    ssd1306_clearScreen();
+    ssd1306_drawRect(4, 4, 123, 59);
+    ssd1306_setFixedFont(ssd1306xled_font6x8);
+    ssd1306_printFixed(8,8, editnumber_msg, STYLE_NORMAL);
+    ssd1306_printFixed(8,24, ftoa(editnumber_val / editnumber_scale), STYLE_NORMAL);
+    if (editnumber_val != editnumber_initial) {
+      ssd1306_printFixed(8,40, "was", STYLE_NORMAL);
+      ssd1306_printFixed(32,40, ftoa(editnumber_initial / editnumber_scale), STYLE_NORMAL);
+    }
+    redraw = 0;
+  }
+
+  if (buttonpress[OK]) {
+    // return to previous mode
+    mode = editnumber_mode;
+    redraw = 1;
+  }
+  if (buttonpress[CANCEL]) {
+    // undo changes and return to previous mode
+    editnumber_val = editnumber_initial;
+    mode = editnumber_mode;
+    redraw = 1;
+  }
+}
+
+void edit_number(char edittype, float val, float scale, char *msg) {
+  was_editing = edittype;
+  editnumber_initial = val;
+  editnumber_val = val;
+  editnumber_scale = scale;
+  editnumber_mode = mode;
+  editnumber_msg = msg;
+  mode = EDITNUMBER;
 }
 
 void setup_program_menu() {
