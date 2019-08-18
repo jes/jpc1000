@@ -14,6 +14,7 @@
  *  - 13: CLK for SPI (OLED)
  */
 
+#include <EEPROM.h>
 #include "ssd1306.h"
 #include "nano_gfx.h"
 
@@ -35,7 +36,7 @@ const int debounce_delay = 50; // ms
 const int buttonpin[4] = { 8, 7, 6, 9 };
 
 float k_p, t_i, t_d; // PID parameters
-float cycle_time;
+unsigned long cycle_time;
 float setpoint = 1150;
 float cur_temp;
 int heater_state;
@@ -47,7 +48,7 @@ int buttonpress[4];
 int mode = MAIN;
 
 ProgramSegment program[64];
-int nsegments = 2;
+int nsegments = 0;
 int editing_segment = 0;
 
 SAppMenu menu, program_menu, setup_menu, segment_menu;
@@ -86,8 +87,39 @@ void setup() {
 }
 
 void load_config() {
-  // TODO: read a magic number first so we don't load garbage into the config, initialise with basic defaults if the magic is not there
-  // TODO: read k_p, t_i, t_d, cycle time, setpoint, and program segments
+  // first, check that the EEPROM actually contains our config
+  long magic;
+  EEPROM.get(0, magic);
+  if (magic != 0x6a706331)
+    return;
+
+  EEPROM.get(4, k_p);
+  EEPROM.get(8, t_i);
+  EEPROM.get(12, t_d);
+  EEPROM.get(16, cycle_time);
+  EEPROM.get(20, setpoint);
+  EEPROM.get(24, nsegments);
+  for (int i = 0; i < 64; i++) {
+    EEPROM.get(26 + (i*7) + 0, program[i].type);
+    EEPROM.get(26 + (i*7) + 1, program[i].target);
+    EEPROM.get(26 + (i*7) + 3, program[i].duration);
+  }
+}
+
+void save_config() {
+  EEPROM.put(0, 0x6a706331);
+
+  EEPROM.put(4, k_p);
+  EEPROM.put(8, t_i);
+  EEPROM.put(12, t_d);
+  EEPROM.put(16, cycle_time);
+  EEPROM.put(20, setpoint);
+  EEPROM.put(24, nsegments);
+  for (int i = 0; i < 64; i++) {
+    EEPROM.put(26 + (i*7) + 0, program[i].type);
+    EEPROM.put(26 + (i*7) + 1, program[i].target);
+    EEPROM.put(26 + (i*7) + 3, program[i].duration);
+  }
 }
 
 void loop() {
@@ -154,7 +186,7 @@ void pid_control() {
 
   float error = setpoint - cur_temp;
   float err_d = error - last_error;
-  float dutycycle = k_p * (error + err_i / t_i + err_d * t_d);
+  float dutycycle_adjust = k_p * (error + err_i / t_i + err_d * t_d);
   err_d = (error - last_error) * 1000 / elapsed_ms;
   err_i += error / (1000 / elapsed_ms);
   last_error = error;
@@ -266,6 +298,7 @@ void program_menu_display() {
     } else { // clear program
       // TODO: "are you sure?"
       nsegments = 0;
+      save_config();
       setup_program_menu();
       program_menu.selection = 1;
     }
@@ -345,6 +378,7 @@ void segment_menu_display() {
         // TODO: shuffle all the other segments along so that we just delete this from the middle
         nsegments--;
       }
+      save_config();
       redraw = 1;
       setup_program_menu();
       program_menu.selection = added_segment ? nsegments+1 : editing_segment+1;
