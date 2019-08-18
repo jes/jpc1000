@@ -47,6 +47,7 @@ float setpoint;
 float cur_temp;
 char heater_state;
 char manual_control;
+char show_state;
 unsigned long debouncetime[4];
 char lastbuttonstate[4];
 char button[4];
@@ -110,8 +111,11 @@ void load_config() {
   // initialise defaults
   k_p = 3; t_i = 120; t_d = 30;
   cycle_time = 20000;
+  min_time = 5000;
   setpoint = 50;
   nsegments = 0;
+  manual_control = 0;
+  show_state = 0;
   
   // check that the EEPROM actually contains our config
   long magic;
@@ -127,10 +131,11 @@ void load_config() {
   EEPROM.get(24, setpoint);
   EEPROM.get(28, nsegments);
   EEPROM.get(29, manual_control);
+  EEPROM.get(30, show_state);
   for (int i = 0; i < MAXSEGMENTS; i++) {
-    EEPROM.get(30 + (i*7) + 0, program[i].type);
-    EEPROM.get(30 + (i*7) + 1, program[i].target);
-    EEPROM.get(30 + (i*7) + 3, program[i].duration);
+    EEPROM.get(31 + (i*7) + 0, program[i].type);
+    EEPROM.get(31 + (i*7) + 1, program[i].target);
+    EEPROM.get(31 + (i*7) + 3, program[i].duration);
   }
 }
 
@@ -145,10 +150,11 @@ void save_config() {
   EEPROM.put(24, setpoint);
   EEPROM.put(28, nsegments);
   EEPROM.put(29, manual_control);
+  EEPROM.put(30, show_state);
   for (int i = 0; i < MAXSEGMENTS; i++) {
-    EEPROM.put(30 + (i*7) + 0, program[i].type);
-    EEPROM.put(30 + (i*7) + 1, program[i].target);
-    EEPROM.put(30 + (i*7) + 3, program[i].duration);
+    EEPROM.put(31 + (i*7) + 0, program[i].type);
+    EEPROM.put(31 + (i*7) + 1, program[i].target);
+    EEPROM.put(31 + (i*7) + 3, program[i].duration);
   }
 }
 
@@ -378,6 +384,18 @@ void setup_menu_display() {
       case EDIT_KP:
         k_p = editnumber_val;
         break;
+      case EDIT_TI:
+        t_i = editnumber_val / 1000;
+        break;
+      case EDIT_TD:
+        t_d = editnumber_val / 1000;
+        break;
+      case EDIT_CYCTIME:
+        cycle_time = editnumber_val / 1000;
+        break;
+      case EDIT_MINTIME:
+        min_time = editnumber_val / 1000;
+        break;
     }
     save_config();
     int sel = setup_menu.selection;
@@ -408,18 +426,31 @@ void setup_menu_display() {
     int sel = ssd1306_menuSelection(&setup_menu);
     switch (sel) {
       case 0: // k_p
-        edit_number(EDIT_KP, k_p, 1, 0, 10000, "Edit Kp:");
+        edit_number(EDIT_KP, k_p, 0, 10000, 1, "Edit Kp:");
         redraw = 1;
         break;
       case 1: // t_i
+        edit_number(EDIT_TI, t_i*1000, 0, 7*86400*1000, 1, "Edit Ti:");
+        editnumber_time = 1;
+        redraw = 1;
         break;
       case 2: // t_d
+        edit_number(EDIT_TD, t_d*1000, 0, 7*86400*1000, 1, "Edit Td:");
+        editnumber_time = 1;
+        redraw = 1;
         break;
       case 3: // cycle time
+        edit_number(EDIT_CYCTIME, cycle_time, 0, 7*86400*1000, 1, "Edit cycle time:");
+        editnumber_time = 1;
+        redraw = 1;
         break;
       case 4: // min. time
+        edit_number(EDIT_MINTIME, min_time, 0, 7*86400*1000, 1, "Edit minimum time:");
+        editnumber_time = 1;
+        redraw = 1;
         break;
       case 5: // show state
+        show_state = !show_state;
         break;
       case 6: // manual control
         manual_control = !manual_control;
@@ -430,6 +461,7 @@ void setup_menu_display() {
         load_config();
         break;
     }
+    save_config();
     redraw = 1;
     setup_setup_menu();
     setup_menu.selection = sel;
@@ -523,7 +555,6 @@ void editnumber_display() {
   static char redraw = 1, buttonheld = -1;
   static unsigned long heldsince;
   static int donesteps;
-  static float stepmult = 1;
 
   for (int i = UP; i <= DOWN; i++) {
     int dir = (i == UP) ? 1 : -1;
@@ -550,7 +581,6 @@ void editnumber_display() {
         buttonheld = i;
         heldsince = millis();
         donesteps = 5;
-        stepmult = onestep;
       }
       int heldsteps = (millis()-heldsince) / editnumber_repeat_ms;
       int stepsize = 1;
@@ -564,7 +594,7 @@ void editnumber_display() {
         stepsize = 5;
       // TODO: snap to round numbers
       if (heldsteps > donesteps) {
-        editnumber_val += stepsize * stepmult;
+        editnumber_val += stepsize * onestep;
         donesteps++;
         redraw = 1;
       }
@@ -639,7 +669,7 @@ void setup_setup_menu() {
   sprintf(buftd, "Td: %s", timetoa(t_d*1000));
   sprintf(bufcycletime, "Cyc time: %s", timetoa(cycle_time));
   sprintf(bufmintime, "Min time: %s", timetoa(min_time));
-  sprintf(bufshowstate, "Show state: off");
+  sprintf(bufshowstate, "Show state: %s", show_state ? "on" : "off");
   sprintf(bufmanual, "Manual control: %s", manual_control ? "on" : "off");
 
   setup_menu_items[0] = bufkp;
