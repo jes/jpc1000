@@ -37,9 +37,11 @@ const int heater_pin = 10;
 const int debounce_delay = 50; // ms
 const int buttonpin[4] = { 8, 7, 6, 9 };
 
+// don't edit these here, they get initialised in load_config()
 float k_p, t_i, t_d; // PID parameters
-unsigned long cycle_time;
-float setpoint = 1150;
+int cycle_time;
+float dutycycle;
+float setpoint;
 float cur_temp;
 int heater_state;
 int manual_control;
@@ -58,7 +60,7 @@ const char *menu_items[] = {
   "Program", "Setup",
 };
 char *program_menu_items[MAXSEGMENTS];
-char *setup_menu_items[7];
+char *setup_menu_items[8];
 char *segment_menu_items[4];
 
 // prototypes & array of screen handler functions:
@@ -89,7 +91,13 @@ void setup() {
 }
 
 void load_config() {
-  // first, check that the EEPROM actually contains our config
+  // initialise defaults
+  k_p = 3; t_i = 120; t_d = 30;
+  cycle_time = 20;
+  setpoint = 50;
+  nsegments = 0;
+  
+  // check that the EEPROM actually contains our config
   long magic;
   EEPROM.get(0, magic);
   if (magic != 0x6a706331)
@@ -99,12 +107,12 @@ void load_config() {
   EEPROM.get(8, t_i);
   EEPROM.get(12, t_d);
   EEPROM.get(16, cycle_time);
-  EEPROM.get(20, setpoint);
-  EEPROM.get(24, nsegments);
+  EEPROM.get(18, setpoint);
+  EEPROM.get(22, nsegments);
   for (int i = 0; i < MAXSEGMENTS; i++) {
-    EEPROM.get(26 + (i*7) + 0, program[i].type);
-    EEPROM.get(26 + (i*7) + 1, program[i].target);
-    EEPROM.get(26 + (i*7) + 3, program[i].duration);
+    EEPROM.get(24 + (i*7) + 0, program[i].type);
+    EEPROM.get(24 + (i*7) + 1, program[i].target);
+    EEPROM.get(24 + (i*7) + 3, program[i].duration);
   }
 }
 
@@ -115,12 +123,12 @@ void save_config() {
   EEPROM.put(8, t_i);
   EEPROM.put(12, t_d);
   EEPROM.put(16, cycle_time);
-  EEPROM.put(20, setpoint);
-  EEPROM.put(24, nsegments);
+  EEPROM.put(18, setpoint);
+  EEPROM.put(22, nsegments);
   for (int i = 0; i < MAXSEGMENTS; i++) {
-    EEPROM.put(26 + (i*7) + 0, program[i].type);
-    EEPROM.put(26 + (i*7) + 1, program[i].target);
-    EEPROM.put(26 + (i*7) + 3, program[i].duration);
+    EEPROM.put(24 + (i*7) + 0, program[i].type);
+    EEPROM.put(24 + (i*7) + 1, program[i].target);
+    EEPROM.put(24 + (i*7) + 3, program[i].duration);
   }
 }
 
@@ -129,23 +137,27 @@ void loop() {
 
   // read & sanity-check temperature
   cur_temp = read_thermocouple();
-  if (cur_temp < min_temp || cur_temp > max_temp) {
+  if (cur_temp < min_temp || cur_temp > max_temp)
     safe_to_operate = 0;
-    heater(0);
-  }
   // TODO: if heater has been on for a while and temperature hasn't risen, assume thermocouple dislodged and set not-safe-to-operate
 
-  if (safe_to_operate)
-    pid_control();
+  if (safe_to_operate) {
+    if (!manual_control)
+      pid_control();
+    unsigned long cycle_offset = millis()%(cycle_time*1000ul);
+    unsigned long ontime = dutycycle * cycle_time * 1000ul;
+    heater(cycle_offset < ontime);
+  } else {
+    heater(0);
+  }
 
-  // check button states w/debounce
   read_buttons();
 
   screen_handler[mode]();
 }
 
 float read_thermocouple() {
-  return 1000;
+  return 10;
 }
 
 // https://www.arduino.cc/en/Tutorial/Debounce
@@ -175,12 +187,6 @@ void heater(int state) {
 void pid_control() {
   static float last_error, err_i;
   static unsigned long lastcheck;
-  
-  // TODO: if we're in a duty-cycle-on part: switch heater on, else switch it off
-  heater(1); //is_duty_cycle_on);
-
-  if (manual_control)
-    return;
 
   unsigned long elapsed_ms = millis() - lastcheck;
   if (elapsed_ms < 1)
@@ -192,6 +198,9 @@ void pid_control() {
   err_d = (error - last_error) * 1000 / elapsed_ms;
   err_i += error / (1000 / elapsed_ms);
   last_error = error;
+  dutycycle += dutycycle_adjust;
+  if (dutycycle < 0) dutycycle = 0;
+  if (dutycycle > 1) dutycycle = 1;
   // TODO: anti-windup
 
   lastcheck = millis();
@@ -199,8 +208,6 @@ void pid_control() {
 
 void main_display() {
   static unsigned long lasthash;
-
-  heater_state = (millis()/1000)%2;
 
   // rendering
   unsigned long screen_hash = 10*(int)cur_temp + 2*(int)setpoint + heater_state + 1;
@@ -336,7 +343,30 @@ void setup_menu_display() {
   if (buttonpress[OK]) {
     redraw = 1;
     int sel = ssd1306_menuSelection(&setup_menu);
-    // TODO: interact with setup menu
+    switch (sel) {
+      case 0: // k_p
+        break;
+      case 1: // t_i
+        break;
+      case 2: // t_d
+        break;
+      case 3: // cycle time
+        break;
+      case 4: // min. time
+        break;
+      case 5: // show state
+        break;
+      case 6: // manual control
+        break;
+      case 7: // reset all
+        // TODO: are you sure?
+        EEPROM.put(0, 0); // overwrite magic number with 0 so that we re-initialise with defaults
+        load_config();
+        setup_setup_menu();
+        setup_menu.selection = 7;
+        redraw = 1;
+        break;
+    }
   }
   if (buttonpress[CANCEL]) {
     redraw = 1;
@@ -418,8 +448,9 @@ void setup_setup_menu() {
   setup_menu_items[4] = "Min. time: 5s";
   setup_menu_items[5] = "Show state: on";
   setup_menu_items[6] = "Manual control: off";
+  setup_menu_items[7] = "Reset all";
   
-  ssd1306_createMenu(&setup_menu, setup_menu_items, 7);
+  ssd1306_createMenu(&setup_menu, setup_menu_items, 8);
 }
 
 void setup_segment_menu(int seg) {
