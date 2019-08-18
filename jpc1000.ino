@@ -18,7 +18,7 @@
 #include "ssd1306.h"
 #include "nano_gfx.h"
 
-#define MAXSEGMENTS 32
+#define MAXSEGMENTS 16
 
 typedef struct ProgramSegment {
   char type; // RAMP/STEP
@@ -39,7 +39,8 @@ const int buttonpin[4] = { 8, 7, 6, 9 };
 
 // don't edit these here, they get initialised in load_config()
 float k_p, t_i, t_d; // PID parameters
-int cycle_time;
+unsigned long cycle_time;
+unsigned long min_time;
 float dutycycle;
 float setpoint;
 float cur_temp;
@@ -93,7 +94,7 @@ void setup() {
 void load_config() {
   // initialise defaults
   k_p = 3; t_i = 120; t_d = 30;
-  cycle_time = 20;
+  cycle_time = 20000;
   setpoint = 50;
   nsegments = 0;
   
@@ -107,12 +108,13 @@ void load_config() {
   EEPROM.get(8, t_i);
   EEPROM.get(12, t_d);
   EEPROM.get(16, cycle_time);
-  EEPROM.get(18, setpoint);
-  EEPROM.get(22, nsegments);
+  EEPROM.get(20, min_time);
+  EEPROM.get(24, setpoint);
+  EEPROM.get(28, nsegments);
   for (int i = 0; i < MAXSEGMENTS; i++) {
-    EEPROM.get(24 + (i*7) + 0, program[i].type);
-    EEPROM.get(24 + (i*7) + 1, program[i].target);
-    EEPROM.get(24 + (i*7) + 3, program[i].duration);
+    EEPROM.get(30 + (i*7) + 0, program[i].type);
+    EEPROM.get(30 + (i*7) + 1, program[i].target);
+    EEPROM.get(30 + (i*7) + 3, program[i].duration);
   }
 }
 
@@ -123,12 +125,13 @@ void save_config() {
   EEPROM.put(8, t_i);
   EEPROM.put(12, t_d);
   EEPROM.put(16, cycle_time);
-  EEPROM.put(18, setpoint);
-  EEPROM.put(22, nsegments);
+  EEPROM.put(20, min_time);
+  EEPROM.put(24, setpoint);
+  EEPROM.put(28, nsegments);
   for (int i = 0; i < MAXSEGMENTS; i++) {
-    EEPROM.put(24 + (i*7) + 0, program[i].type);
-    EEPROM.put(24 + (i*7) + 1, program[i].target);
-    EEPROM.put(24 + (i*7) + 3, program[i].duration);
+    EEPROM.put(30 + (i*7) + 0, program[i].type);
+    EEPROM.put(30 + (i*7) + 1, program[i].target);
+    EEPROM.put(30 + (i*7) + 3, program[i].duration);
   }
 }
 
@@ -144,8 +147,12 @@ void loop() {
   if (safe_to_operate) {
     if (!manual_control)
       pid_control();
-    unsigned long cycle_offset = millis()%(cycle_time*1000ul);
-    unsigned long ontime = dutycycle * cycle_time * 1000ul;
+    unsigned long cycle_offset = millis()%cycle_time;
+    unsigned long ontime = dutycycle * cycle_time;
+    if (ontime < min_time)
+      ontime = 0;
+    if (cycle_time-ontime < min_time)
+      ontime = cycle_time;
     heater(cycle_offset < ontime);
   } else {
     heater(0);
@@ -451,8 +458,8 @@ void setup_setup_menu() {
   sprintf(bufkp, "Kp: %s", ftoa(k_p));
   sprintf(bufti, "Ti: %s", timetoa(t_i*1000));
   sprintf(buftd, "Td: %s", timetoa(t_d*1000));
-  sprintf(bufcycletime, "Cyc. time: %s", timetoa(cycle_time*1000));
-  sprintf(bufmintime, "Min. time: %s", timetoa(5000));
+  sprintf(bufcycletime, "Cyc time: %s", timetoa(cycle_time));
+  sprintf(bufmintime, "Min time: %s", timetoa(min_time));
   sprintf(bufshowstate, "Show state: off");
   sprintf(bufmanual, "Manual control: off");
 
@@ -511,11 +518,11 @@ char *timetoa(unsigned long ms) {
   static char buf[16];
 
   if (ms >= 86400000) {
-    sprintf(buf, "%dd%02dh", ms/86400000, (ms%86400000)/3600000);
+    sprintf(buf, "%lud%02luh", ms/86400000, (ms%86400000)/3600000);
   } else if (ms >= 3600000) {
-    sprintf(buf, "%dh%02dm", ms/3600000, (ms%3600000)/60000);
+    sprintf(buf, "%luh%02lum", ms/3600000, (ms%3600000)/60000);
   } else if (ms >= 60000) {
-    sprintf(buf, "%dm%02ds", ms/60000, (ms%60000)/1000);
+    sprintf(buf, "%lum%02lus", ms/60000, (ms%60000)/1000);
   } else {
     sprintf(buf, "%ss", ftoa(((float)ms)/1000));
   }
