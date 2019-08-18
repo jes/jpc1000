@@ -506,40 +506,35 @@ void editnumber_display() {
   static unsigned long heldsince;
   static int donesteps;
 
-  if (buttonpress[UP]) {
-    editnumber_val++;
-    redraw = 1;
-  }
-  if (buttonpress[DOWN]) {
-    editnumber_val--;
-    redraw = 1;
-  }
-
-  // TODO: snap to round numbers, speed up as held time is longer
-  if (button[UP]) {
-    if (buttonheld != UP) {
-      buttonheld = UP;
-      heldsince = millis();
-      donesteps = 5;
-    }
-    int heldsteps = (millis()-heldsince) / editnumber_repeat_ms;
-    if (heldsteps > donesteps) {
-      editnumber_val++;
-      donesteps++;
+  for (int i = UP; i <= DOWN; i++) {
+    int dir = i == UP ? 1 : -1;
+    if (buttonpress[i]) {
+      editnumber_val += dir;
       redraw = 1;
     }
-  }
-  if (button[DOWN]) {
-    if (buttonheld != DOWN) {
-      buttonheld = DOWN;
-      heldsince = millis();
-      donesteps = 5;
-    }
-    int heldsteps = (millis()-heldsince) / editnumber_repeat_ms;
-    if (heldsteps > donesteps) {
-      editnumber_val--;
-      donesteps++;
-      redraw = 1;
+  
+    if (button[i]) {
+      if (buttonheld != i) {
+        buttonheld = i;
+        heldsince = millis();
+        donesteps = 5;
+      }
+      int heldsteps = (millis()-heldsince) / editnumber_repeat_ms;
+      int stepsize = 1;
+      if (heldsteps > 40)
+        stepsize = 50;
+      else if (heldsteps > 30)
+        stepsize = 20;
+      else if (heldsteps > 20)
+        stepsize = 10;
+      else if (heldsteps > 10)
+        stepsize = 5;
+      // TODO: snap to round numbers
+      if (heldsteps > donesteps) {
+        editnumber_val += dir * stepsize;
+        donesteps++;
+        redraw = 1;
+      }
     }
   }
   if (!button[buttonheld])
