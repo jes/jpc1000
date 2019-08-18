@@ -59,6 +59,8 @@ char was_editing;
 float editnumber_scale;
 float editnumber_initial;
 float editnumber_val;
+float editnumber_min;
+float editnumber_max;
 char editnumber_mode;
 char editnumber_time;
 char *editnumber_msg;
@@ -245,11 +247,11 @@ void main_display() {
   }
 
   if (buttonpress[UP]) {
-    edit_number(EDIT_SETPOINT, setpoint+1, 1, "Edit setpoint:");
+    edit_number(EDIT_SETPOINT, setpoint+1, 5, 1150, 1, "Edit setpoint:");
     editnumber_initial = setpoint;
   }
   if (buttonpress[DOWN]) {
-    edit_number(EDIT_SETPOINT, setpoint-1, 1, "Edit setpoint:");
+    edit_number(EDIT_SETPOINT, setpoint-1, 5, 1150, 1, "Edit setpoint:");
     editnumber_initial = setpoint;
   }
 
@@ -406,7 +408,7 @@ void setup_menu_display() {
     int sel = ssd1306_menuSelection(&setup_menu);
     switch (sel) {
       case 0: // k_p
-        edit_number(EDIT_KP, k_p, 1, "Edit Kp:");
+        edit_number(EDIT_KP, k_p, 1, 0, 10000, "Edit Kp:");
         redraw = 1;
         break;
       case 1: // t_i
@@ -484,11 +486,11 @@ void segment_menu_display() {
       segment_menu.selection = sel;
     } else if (sel == 1) { // target
       // TODO: enter a mode where you can edit the number with up/down
-      edit_number(EDIT_TARGET, program[editing_segment].target, 1, "Edit target:");
+      edit_number(EDIT_TARGET, program[editing_segment].target, 5, 1150, 1, "Edit target:");
       redraw = 1;
     } else if (sel == 2) { // time
       // TODO: enter a mode where you can edit the time with up/down
-      edit_number(EDIT_SEGTIME, program[editing_segment].duration*1000, 1, "Edit time:");
+      edit_number(EDIT_SEGTIME, program[editing_segment].duration*1000, 0, 7*86400*1000, 1, "Edit time:");
       editnumber_time = 1;
     } else if (sel == 3) { // add/save
       int added_segment = 0;
@@ -570,6 +572,11 @@ void editnumber_display() {
   }
   if (!button[buttonheld])
     buttonheld = -1;
+  
+  if (editnumber_val < editnumber_min)
+    editnumber_val = editnumber_min;
+  if (editnumber_val > editnumber_max)
+    editnumber_val = editnumber_max;
 
   if (redraw) {
     ssd1306_clearScreen();
@@ -597,13 +604,15 @@ void editnumber_display() {
   }
 }
 
-void edit_number(char edittype, float val, float scale, char *msg) {
+void edit_number(char edittype, float val, float min, float max, float scale, char *msg) {
   was_editing = edittype;
   editnumber_initial = val;
   editnumber_val = val;
   editnumber_scale = scale;
   editnumber_mode = mode;
   editnumber_msg = msg;
+  editnumber_min = min;
+  editnumber_max = max;
   editnumber_time = 0;
   mode = EDITNUMBER;
 }
