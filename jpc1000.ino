@@ -18,6 +18,8 @@
 #include "ssd1306.h"
 #include "nano_gfx.h"
 
+#define MAXSEGMENTS 32
+
 typedef struct ProgramSegment {
   char type; // RAMP/STEP
   int target; // degrees C
@@ -47,7 +49,7 @@ int button[4];
 int buttonpress[4];
 int mode = MAIN;
 
-ProgramSegment program[64];
+ProgramSegment program[MAXSEGMENTS];
 int nsegments = 0;
 int editing_segment = 0;
 
@@ -55,7 +57,7 @@ SAppMenu menu, program_menu, setup_menu, segment_menu;
 const char *menu_items[] = {
   "Program", "Setup",
 };
-char *program_menu_items[64];
+char *program_menu_items[MAXSEGMENTS];
 char *setup_menu_items[7];
 char *segment_menu_items[4];
 
@@ -99,7 +101,7 @@ void load_config() {
   EEPROM.get(16, cycle_time);
   EEPROM.get(20, setpoint);
   EEPROM.get(24, nsegments);
-  for (int i = 0; i < 64; i++) {
+  for (int i = 0; i < MAXSEGMENTS; i++) {
     EEPROM.get(26 + (i*7) + 0, program[i].type);
     EEPROM.get(26 + (i*7) + 1, program[i].target);
     EEPROM.get(26 + (i*7) + 3, program[i].duration);
@@ -115,7 +117,7 @@ void save_config() {
   EEPROM.put(16, cycle_time);
   EEPROM.put(20, setpoint);
   EEPROM.put(24, nsegments);
-  for (int i = 0; i < 64; i++) {
+  for (int i = 0; i < MAXSEGMENTS; i++) {
     EEPROM.put(26 + (i*7) + 0, program[i].type);
     EEPROM.put(26 + (i*7) + 1, program[i].target);
     EEPROM.put(26 + (i*7) + 3, program[i].duration);
@@ -291,10 +293,13 @@ void program_menu_display() {
       setup_segment_menu(sel-1);
       mode = SEGMENT;
     } else if (sel == nsegments+1) { // add segment
-      program[nsegments].type = STEP;
-      program[nsegments].target = 100;
-      setup_segment_menu(nsegments);
-      mode = SEGMENT;
+      if (nsegments < 32) {
+        program[nsegments].type = STEP;
+        program[nsegments].target = 100;
+        program[nsegments].duration = 3600;
+        setup_segment_menu(nsegments);
+        mode = SEGMENT;
+      }
     } else { // clear program
       // TODO: "are you sure?"
       nsegments = 0;
@@ -375,7 +380,7 @@ void segment_menu_display() {
         added_segment = 1;
         nsegments++;
       } else { // remove
-        // TODO: shuffle all the other segments along so that we just delete this from the middle
+        // TODO: shift all the other segments along so that we just delete this one from the middle
         nsegments--;
       }
       save_config();
@@ -392,10 +397,12 @@ void segment_menu_display() {
 }
 
 void setup_program_menu() {
-  // TODO: don't allow too-many items
+  static char buf[MAXSEGMENTS][24];
+  
   program_menu_items[0] = "Run";
   for (int i = 0; i < nsegments; i++) {
-    program_menu_items[i+1] = "1. step 100 3h30";
+    sprintf(buf[i], "%d. %s %d 1h30", i+1, program[i].type == RAMP ? "ramp" : "step", program[i].target);
+    program_menu_items[i+1] = buf[i];
   }
   program_menu_items[nsegments+1] = "Add segment";
   program_menu_items[nsegments+2] = "Clear program";
