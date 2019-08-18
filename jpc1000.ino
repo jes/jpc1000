@@ -59,6 +59,7 @@ float editnumber_initial;
 float editnumber_val;
 char editnumber_mode;
 char *editnumber_msg;
+const int editnumber_repeat_ms = 100; // ms
 
 ProgramSegment program[MAXSEGMENTS];
 char nsegments = 0;
@@ -501,18 +502,48 @@ void segment_menu_display() {
 }
 
 void editnumber_display() {
-  static char redraw = 1;
-
-  // TODO: when button is held down, move the value faster
+  static char redraw = 1, buttonheld = -1;
+  static unsigned long heldsince;
+  static int donesteps;
 
   if (buttonpress[UP]) {
-    editnumber_val += editnumber_scale;
+    editnumber_val++;
     redraw = 1;
   }
   if (buttonpress[DOWN]) {
-    editnumber_val -= editnumber_scale;
+    editnumber_val--;
     redraw = 1;
   }
+
+  // TODO: snap to round numbers, speed up as held time is longer
+  if (button[UP]) {
+    if (buttonheld != UP) {
+      buttonheld = UP;
+      heldsince = millis();
+      donesteps = 5;
+    }
+    int heldsteps = (millis()-heldsince) / editnumber_repeat_ms;
+    if (heldsteps > donesteps) {
+      editnumber_val++;
+      donesteps++;
+      redraw = 1;
+    }
+  }
+  if (button[DOWN]) {
+    if (buttonheld != DOWN) {
+      buttonheld = DOWN;
+      heldsince = millis();
+      donesteps = 5;
+    }
+    int heldsteps = (millis()-heldsince) / editnumber_repeat_ms;
+    if (heldsteps > donesteps) {
+      editnumber_val--;
+      donesteps++;
+      redraw = 1;
+    }
+  }
+  if (!button[buttonheld])
+    buttonheld = -1;
 
   if (redraw) {
     ssd1306_clearScreen();
