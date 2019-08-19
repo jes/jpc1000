@@ -111,7 +111,7 @@ void load_config() {
   // initialise defaults
   k_p = 3; t_i = 120; t_d = 30;
   cycle_time = 20000;
-  min_time = 5000;
+  min_time = 1000;
   setpoint = 50;
   nsegments = 0;
   manual_control = 0;
@@ -191,7 +191,18 @@ void loop() {
 }
 
 float read_thermocouple() {
-  return 10;
+  static float temp;
+  float r = analogRead(A0)+1;
+  r = (1023 / r) - 1;
+  r = 10000 / r;
+  r = r / 100000;
+  r = log(r);
+  r /= 3950;
+  r += 1.0 / (25 + 273.15);
+  r = 1 / r;
+  r -= 273.15;
+  temp = temp * 0.999 + r * 0.001;
+  return temp;
 }
 
 // https://www.arduino.cc/en/Tutorial/Debounce
@@ -219,7 +230,7 @@ void heater(int state) {
 }
 
 void pid_control() {
-  static float last_error, err_i;
+  static float last_error, err_i, err_d;
   static unsigned long lastcheck;
 
   unsigned long elapsed_ms = millis() - lastcheck;
@@ -227,15 +238,21 @@ void pid_control() {
     elapsed_ms = 1;
 
   float error = setpoint - cur_temp;
-  float err_d = error - last_error;
-  float dutycycle_adjust = k_p * (error + err_i / t_i + err_d * t_d);
-  err_d = (error - last_error) * 1000 / elapsed_ms;
+  float instant_err_d = error - last_error;
+  instant_err_d = (error - last_error) * 1000 / elapsed_ms;
+  err_d = err_d * 0.999 + instant_err_d * 0.001;
+  float dutycycle_adjust = k_p * (error + err_i / t_i + err_d * t_d) / (1000 / elapsed_ms);
   err_i += error / (1000 / elapsed_ms);
   last_error = error;
-  dutycycle += dutycycle_adjust;
-  if (dutycycle < 0) dutycycle = 0;
-  if (dutycycle > 1) dutycycle = 1;
-  // TODO: anti-windup
+  dutycycle += dutycycle_adjust / 100;
+  if (dutycycle < 0) {
+    dutycycle = 0;
+    err_i = 0;
+  }
+  if (dutycycle > 1) {
+    dutycycle = 1;
+    err_i = 0;
+  }
 
   lastcheck = millis();
 }
@@ -243,39 +260,52 @@ void pid_control() {
 void main_display() {
   static unsigned long lasthash;
 
-  // TODO: if (manual_control) then editing is editing dutycycle instead of setpoint
-
   if (was_editing) {
-    setpoint = editnumber_val;
+    if (manual_control) {
+      dutycycle = editnumber_val/100;
+    } else {
+      setpoint = editnumber_val;
+    }
     save_config();
     lasthash = 0;
     was_editing = 0;
   }
 
-  if (buttonpress[UP]) {
-    edit_number(EDIT_SETPOINT, setpoint+1, 5, 1150, 1, "Edit setpoint:");
-    editnumber_initial = setpoint;
-  }
-  if (buttonpress[DOWN]) {
-    edit_number(EDIT_SETPOINT, setpoint-1, 5, 1150, 1, "Edit setpoint:");
-    editnumber_initial = setpoint;
+  for (int i = UP; i <= DOWN; i++) {
+    if (buttonpress[i]) {
+      if (manual_control) {
+        edit_number(EDIT_SETPOINT, 100*dutycycle+(i==UP?1:-1), 0, 100, 1, "Edit dutycycle:");
+        editnumber_initial = 100*dutycycle;
+      } else {
+        edit_number(EDIT_SETPOINT, setpoint+(i==UP?1:-1), 5, 1150, 1, "Edit setpoint:");
+        editnumber_initial = setpoint;
+      }
+    }
   }
 
   // rendering
-  unsigned long screen_hash = 10*(int)cur_temp + 2*(int)setpoint + heater_state + 1;
+  unsigned long screen_hash = 10000*dutycycle + 10*(int)cur_temp + 2*(int)setpoint + heater_state + 1;
   if (screen_hash != lasthash) {
     // temperatures
     char buf[32];
-    sprintf(buf, "%d / %d", (int)cur_temp, (int)setpoint);
+    sprintf(buf, "%d / %d", (int)(cur_temp+0.5), (int)(setpoint+0.5));
     ssd1306_clearScreen();
     ssd1306_setFixedFont(courier_new_font11x16_digits);
     ssd1306_printFixed(0,0, buf, STYLE_NORMAL);
 
-    // output state
+    // show output state
     if (heater_state)
       ssd1306_fillRect(123, 1, 127, 12);
 
     // TODO: if running a program, give info about the program
+    if (run_program) {
+      
+    }
+    if (show_state) {
+      ssd1306_setFixedFont(ssd1306xled_font6x8);
+      ssd1306_printFixed(0, 16, "dutycycle=   ", STYLE_NORMAL);
+      ssd1306_printFixed(60,16, ftoa(dutycycle*100), STYLE_NORMAL);
+    }
 
     lasthash = screen_hash;
   }
@@ -391,10 +421,10 @@ void setup_menu_display() {
         t_d = editnumber_val / 1000;
         break;
       case EDIT_CYCTIME:
-        cycle_time = editnumber_val / 1000;
+        cycle_time = editnumber_val;
         break;
       case EDIT_MINTIME:
-        min_time = editnumber_val / 1000;
+        min_time = editnumber_val;
         break;
     }
     save_config();
@@ -440,7 +470,7 @@ void setup_menu_display() {
         redraw = 1;
         break;
       case 3: // cycle time
-        edit_number(EDIT_CYCTIME, cycle_time, 0, 7*86400*1000, 1, "Edit cycle time:");
+        edit_number(EDIT_CYCTIME, cycle_time, 0.1, 7*86400*1000, 1, "Edit cycle time:");
         editnumber_time = 1;
         redraw = 1;
         break;
@@ -559,7 +589,7 @@ void editnumber_display() {
   for (int i = UP; i <= DOWN; i++) {
     int dir = (i == UP) ? 1 : -1;
 
-    float onestep = dir;
+    float onestep = editnumber_val < 10 ? 0.1*dir : dir;
     if (editnumber_time) {
       if (fabs(editnumber_val / editnumber_scale) >= 86400000)
         onestep = dir * 3600000;
