@@ -401,7 +401,7 @@ void program_menu_display() {
       if (run_program) {
         program_started = millis();
         segment_started = millis();
-        start_temp = cur_temp;
+        start_temp = setpoint;
         run_segment = 0;
       }
       if (nsegments == 0)
