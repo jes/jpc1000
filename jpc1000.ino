@@ -320,7 +320,10 @@ void main_display() {
     if (run_program) {
       ssd1306_setFixedFont(ssd1306xled_font6x8);
       char buf[32];
-      sprintf(buf, "%d. %s %d %s", run_segment+1, program[run_segment].type == RAMP ? "ramp" : "step", program[run_segment].target, timetoa(program[run_segment].duration*1000-(millis()-segment_started)));
+      unsigned long t = millis()-segment_started;
+      if (t > program[run_segment].duration*1000)
+        t = program[run_segment].duration*1000; // don't display 49days when millis() runs past the end of the segment
+      sprintf(buf, "%d. %s %d %s", run_segment+1, program[run_segment].type == RAMP ? "ramp" : "step", program[run_segment].target, timetoa(program[run_segment].duration*1000-t));
       ssd1306_printFixed(0, 16, buf, STYLE_NORMAL);
     } else if (show_state) {
       ssd1306_setFixedFont(ssd1306xled_font6x8);
