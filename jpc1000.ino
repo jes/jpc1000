@@ -3,18 +3,25 @@
  * 
  * Libraries needed:
  *  - ssd1306
+ *  - Adafruit MAX31855
  *  
  * Pins:
  *  - 3: OLED reset
  *  - 4: OLED CS
  *  - 5: OLED DC
- *  - 6: OK button (pull to ground to press)
+ *  - 6: OK button
+ *  - 7: UP button
+ *  - 8: DOWN button
+ *  - 9: CANCEL button
  *  - 10: SSR for heater
  *  - 11: MOSI for SPI (OLED)
  *  - 13: CLK for SPI (OLED)
+ *  
+ * Buttons are activated when pulled to ground
  */
 
 #include <EEPROM.h>
+#include "Adafruit_MAX31855.h"
 #include "ssd1306.h"
 #include "nano_gfx.h"
 
