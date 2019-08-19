@@ -241,7 +241,10 @@ void pid_control() {
   float instant_err_d = error - last_error;
   instant_err_d = (error - last_error) * 1000 / elapsed_ms;
   err_d = err_d * 0.999 + instant_err_d * 0.001;
-  float dutycycle_adjust = k_p * (error + err_i / t_i + err_d * t_d) / (1000 / elapsed_ms);
+  float sumerrors = error + err_d * t_d;
+  if (t_i > 0.05)
+    sumerrors += t_i;
+  float dutycycle_adjust = k_p * sumerrors / (1000 / elapsed_ms);
   err_i += error / (1000 / elapsed_ms);
   last_error = error;
   dutycycle += dutycycle_adjust / 100;
@@ -695,8 +698,8 @@ void setup_setup_menu() {
   static char bufkp[16], bufti[16], buftd[16], bufcycletime[24], bufmintime[24], bufshowstate[16], bufmanual[24];
   
   sprintf(bufkp, "Kp: %s", ftoa(k_p));
-  sprintf(bufti, "Ti: %s", timetoa(t_i*1000));
-  sprintf(buftd, "Td: %s", timetoa(t_d*1000));
+  sprintf(bufti, "Ti: %s", t_i > 0.05 ? timetoa(t_i*1000) : "off");
+  sprintf(buftd, "Td: %s", t_d > 0.05 ? timetoa(t_d*1000) : "off");
   sprintf(bufcycletime, "Cyc time: %s", timetoa(cycle_time));
   sprintf(bufmintime, "Min time: %s", timetoa(min_time));
   sprintf(bufshowstate, "Show state: %s", show_state ? "on" : "off");
