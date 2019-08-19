@@ -198,8 +198,12 @@ void loop() {
         setpoint = program[run_segment].target;
       } else {
         // ramp to target over segment duration
-        float p = (float)segment_time / (float)program[run_segment].duration;
-        setpoint = start_temp*(1-p) + program[run_segment].target*p;
+        if (program[run_segment].duration == 0) {
+          setpoint = program[run_segment].target;
+        } else {
+          float p = (float)segment_time / (float)program[run_segment].duration;
+          setpoint = start_temp*(1-p) + program[run_segment].target*p;
+        }
       }
     }
   }
