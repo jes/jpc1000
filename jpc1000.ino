@@ -53,8 +53,11 @@ char lastbuttonstate[4];
 char button[4];
 char buttonpress[4];
 char mode = MAIN;
+float start_temp;
 char run_program;
+char run_segment;
 unsigned long program_started;
+unsigned long segment_started;
 
 char was_editing;
 float editnumber_scale;
@@ -181,8 +184,24 @@ void loop() {
     heater(0);
   }
 
-  if (run_program) {
-    // TODO: update setpoint as per program
+  if (run_program && run_segment < nsegments) {
+    unsigned long segment_time = millis() - segment_started;
+    segment_time /= 1000;
+    if (segment_time > program[run_segment].duration) {
+      run_segment++;
+      segment_started = millis();
+      start_temp = cur_temp;
+      if (run_segment >= nsegments)
+        run_program = 0;
+    } else {
+      if (program[run_segment].type == STEP) {
+        setpoint = program[run_segment].target;
+      } else {
+        // ramp to target over segment duration
+        float p = (float)segment_time / (float)program[run_segment].duration;
+        setpoint = start_temp*(1-p) + program[run_segment].target*p;
+      }
+    }
   }
 
   read_buttons();
@@ -261,7 +280,7 @@ void pid_control() {
 }
 
 void main_display() {
-  static unsigned long lasthash;
+  static unsigned long lastdraw;
 
   if (was_editing) {
     if (manual_control) {
@@ -270,7 +289,7 @@ void main_display() {
       setpoint = editnumber_val;
     }
     save_config();
-    lasthash = 0;
+    lastdraw = 0;
     was_editing = 0;
   }
 
@@ -286,9 +305,7 @@ void main_display() {
     }
   }
 
-  // rendering
-  unsigned long screen_hash = 10000*dutycycle + 10*(int)cur_temp + 2*(int)setpoint + heater_state + 1;
-  if (screen_hash != lasthash) {
+  if (millis() > lastdraw+250) {
     // temperatures
     char buf[32];
     sprintf(buf, "%d / %d", (int)(cur_temp+0.5), (int)(setpoint+0.5));
@@ -300,21 +317,22 @@ void main_display() {
     if (heater_state)
       ssd1306_fillRect(123, 1, 127, 12);
 
-    // TODO: if running a program, give info about the program
     if (run_program) {
-      
-    }
-    if (show_state) {
+      ssd1306_setFixedFont(ssd1306xled_font6x8);
+      char buf[32];
+      sprintf(buf, "%d. %s %d %s", run_segment+1, program[run_segment].type == RAMP ? "ramp" : "step", program[run_segment].target, timetoa(program[run_segment].duration*1000-(millis()-segment_started)));
+      ssd1306_printFixed(0, 16, buf, STYLE_NORMAL);
+    } else if (show_state) {
       ssd1306_setFixedFont(ssd1306xled_font6x8);
       ssd1306_printFixed(0, 16, "dutycycle=   ", STYLE_NORMAL);
       ssd1306_printFixed(60,16, ftoa(dutycycle*100), STYLE_NORMAL);
     }
 
-    lasthash = screen_hash;
+    lastdraw = millis();
   }
 
   if (buttonpress[OK]) {
-    lasthash = 0;
+    lastdraw = 0;
     mode = MENU;
   }
 }
@@ -380,8 +398,14 @@ void program_menu_display() {
     // sel=1..N are segments if N segments exist, first one is run/stop, and the final 2 options are "add segment" and "clear program"
     if (sel == 0) { // Run/Abort
       run_program = !run_program;
-      if (run_program)
+      if (run_program) {
         program_started = millis();
+        segment_started = millis();
+        start_temp = cur_temp;
+        run_segment = 0;
+      }
+      if (nsegments == 0)
+        run_program = 0;
       mode = MAIN;
       redraw = 1;
     } else if (sel <= nsegments) {
