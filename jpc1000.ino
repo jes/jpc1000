@@ -6,6 +6,7 @@
  *  - Adafruit MAX31855
  *  
  * Pins:
+ *  - 2: MAX31855 CS
  *  - 3: OLED reset
  *  - 4: OLED CS
  *  - 5: OLED DC
@@ -15,7 +16,8 @@
  *  - 9: CANCEL button
  *  - 10: SSR for heater
  *  - 11: MOSI for SPI (OLED)
- *  - 13: CLK for SPI (OLED)
+ *  - 12: MISO for SPI (MAX31855)
+ *  - 13: CLK for SPI (OLED+MAX31855)
  *  
  * Buttons are activated when pulled to ground
  */
@@ -100,6 +102,8 @@ ScreenHandlerFunc screen_handler[] = {
   main_display, menu_display, program_menu_display, setup_menu_display, segment_menu_display, editnumber_display,
 };
 
+Adafruit_MAX31855 thermocouple(2);
+
 void setup() {
   ssd1306_setFixedFont(ssd1306xled_font6x8);
   sh1106_128x64_spi_init(3,4,5); // (3,4,5 = Reset,CS,DC)
@@ -115,6 +119,8 @@ void setup() {
 
   ssd1306_createMenu(&menu, menu_items, sizeof(menu_items)/sizeof(char*));
   ssd1306_createMenu(&program_menu, program_menu_items, sizeof(program_menu_items)/sizeof(char*));
+
+  delay(500); // wait for MAX31855 to stabilise (???)
 }
 
 void load_config() {
@@ -221,18 +227,7 @@ void loop() {
 }
 
 float read_thermocouple() {
-  static float temp;
-  float r = analogRead(A0)+1;
-  r = (1023 / r) - 1;
-  r = 10000 / r;
-  r = r / 100000;
-  r = log(r);
-  r /= 3950;
-  r += 1.0 / (25 + 273.15);
-  r = 1 / r;
-  r -= 273.15;
-  temp = temp * 0.999 + r * 0.001;
-  return temp;
+  return thermocouple.readCelsius();
 }
 
 // https://www.arduino.cc/en/Tutorial/Debounce
@@ -271,13 +266,12 @@ void pid_control() {
   float instant_err_d = error - last_error;
   instant_err_d = (error - last_error) * 1000 / elapsed_ms;
   err_d = err_d * 0.999 + instant_err_d * 0.001;
+  err_i += error / (1000 / elapsed_ms);
   float sumerrors = error + err_d * t_d;
   if (t_i > 0.05)
-    sumerrors += t_i;
-  float dutycycle_adjust = k_p * sumerrors / (1000 / elapsed_ms);
-  err_i += error / (1000 / elapsed_ms);
+    sumerrors += err_i * t_i;
+  dutycycle = k_p * sumerrors / (1000 / elapsed_ms);
   last_error = error;
-  dutycycle += dutycycle_adjust / 100;
   if (dutycycle < 0) {
     dutycycle = 0;
     err_i = 0;
