@@ -51,6 +51,7 @@ const char buttonpin[4] = { 8, 7, 6, 9 };
 float k_p, t_i, t_d; // PID parameters
 unsigned long cycle_time;
 unsigned long min_time;
+float err_i, err_d;
 float dutycycle;
 float setpoint;
 float cur_temp;
@@ -102,7 +103,7 @@ ScreenHandlerFunc screen_handler[] = {
   main_display, menu_display, program_menu_display, setup_menu_display, segment_menu_display, editnumber_display,
 };
 
-Adafruit_MAX31855 thermocouple(2);
+Adafruit_MAX31855 thermocouple(2); // CS for MAX31855 on pin 2
 
 void setup() {
   ssd1306_setFixedFont(ssd1306xled_font6x8);
@@ -121,6 +122,7 @@ void setup() {
   ssd1306_createMenu(&program_menu, program_menu_items, sizeof(program_menu_items)/sizeof(char*));
 
   delay(500); // wait for MAX31855 to stabilise (???)
+  cur_temp = read_thermocouple();
 }
 
 void load_config() {
@@ -178,7 +180,7 @@ void loop() {
   int safe_to_operate = 1;
 
   // read & sanity-check temperature
-  cur_temp = read_thermocouple();
+  cur_temp = cur_temp * 0.999 + read_thermocouple() * 0.001;
   if (cur_temp < min_temp || cur_temp > max_temp)
     safe_to_operate = 0;
   // TODO: if heater has been on for a while and temperature hasn't risen, assume thermocouple dislodged and set not-safe-to-operate
@@ -255,7 +257,7 @@ void heater(int state) {
 }
 
 void pid_control() {
-  static float last_error, err_i, err_d;
+  static float last_error;
   static unsigned long lastcheck;
 
   unsigned long elapsed_ms = millis() - lastcheck;
@@ -266,20 +268,19 @@ void pid_control() {
   float instant_err_d = error - last_error;
   instant_err_d = (error - last_error) * 1000 / elapsed_ms;
   err_d = err_d * 0.999 + instant_err_d * 0.001;
-  err_i += error / (1000 / elapsed_ms);
   float sumerrors = error + err_d * t_d;
   if (t_i > 0.05)
-    sumerrors += err_i * t_i;
-  dutycycle = k_p * sumerrors / (1000 / elapsed_ms);
+    sumerrors += err_i / t_i;
+  float instant_dutycycle = k_p * sumerrors / 100;
+  if (instant_dutycycle < 0)
+    instant_dutycycle = 0;
+  if (instant_dutycycle > 1)
+    instant_dutycycle = 1;
+  // don't let err_i get larger if we're at 0% or 100% dutycycle
+  if ((instant_dutycycle > 0.01 && instant_dutycycle < 0.99) || (err_i < 0 && error > 0) || (err_i > 0 && error < 0))
+    err_i += error / (1000 / elapsed_ms);
+  dutycycle = dutycycle * 0.999 + instant_dutycycle * 0.001;
   last_error = error;
-  if (dutycycle < 0) {
-    dutycycle = 0;
-    err_i = 0;
-  }
-  if (dutycycle > 1) {
-    dutycycle = 1;
-    err_i = 0;
-  }
 
   lastcheck = millis();
 }
@@ -324,7 +325,6 @@ void main_display() {
 
     if (run_program) {
       ssd1306_setFixedFont(ssd1306xled_font6x8);
-      char buf[32];
       unsigned long t = millis()-segment_started;
       if (t > program[run_segment].duration*1000)
         t = program[run_segment].duration*1000; // don't display 49days when millis() runs past the end of the segment
@@ -334,6 +334,10 @@ void main_display() {
       ssd1306_setFixedFont(ssd1306xled_font6x8);
       ssd1306_printFixed(0, 16, "dutycycle=   ", STYLE_NORMAL);
       ssd1306_printFixed(60,16, ftoa(dutycycle*100), STYLE_NORMAL);
+      int n = sprintf(buf, "E_pid=%s,", ftoa(setpoint-cur_temp));
+      n += sprintf(buf+n, "%s,", ftoa(err_i));
+      sprintf(buf+n, "%s", ftoa(err_d));
+      ssd1306_printFixed(0, 24, buf, STYLE_NORMAL);
     }
 
     lastdraw = millis();
@@ -649,6 +653,7 @@ void editnumber_display() {
       }
       int heldsteps = (millis()-heldsince) / editnumber_repeat_ms;
       int stepsize = 1;
+      // TODO: make stepping sizes less violent
       if (heldsteps > 40)
         stepsize = 50;
       else if (heldsteps > 30)
