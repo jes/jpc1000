@@ -586,11 +586,9 @@ void segment_menu_display() {
       setup_segment_menu(editing_segment);
       segment_menu.selection = sel;
     } else if (sel == 1) { // target
-      // TODO: enter a mode where you can edit the number with up/down
       edit_number(EDIT_TARGET, program[editing_segment].target, 5, 1150, 1, "Edit target:");
       redraw = 1;
     } else if (sel == 2) { // time
-      // TODO: enter a mode where you can edit the time with up/down
       edit_number(EDIT_SEGTIME, program[editing_segment].duration*1000, 0, 7*86400*1000, 1, "Edit time:");
       editnumber_time = 1;
     } else if (sel == 3) { // add/save
@@ -606,7 +604,9 @@ void segment_menu_display() {
       mode = PROGRAM;
     } else { // remove
       nsegments--;
-      // TODO: shift other segments along
+      for (int i = editing_segment; i < nsegments; i++) {
+        program[i] = program[i+1];
+      }
       save_config();
       redraw = 1;
       setup_program_menu();
