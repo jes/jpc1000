@@ -323,21 +323,27 @@ void main_display() {
     if (heater_state)
       ssd1306_fillRect(123, 1, 127, 12);
 
+    int y = 16;
+
     if (run_program) {
       ssd1306_setFixedFont(ssd1306xled_font6x8);
       unsigned long t = millis()-segment_started;
       if (t > program[run_segment].duration*1000)
         t = program[run_segment].duration*1000; // don't display 49days when millis() runs past the end of the segment
       sprintf(buf, "%d. %s %d %s", run_segment+1, program[run_segment].type == RAMP ? "ramp" : "step", program[run_segment].target, timetoa(program[run_segment].duration*1000-t));
-      ssd1306_printFixed(0, 16, buf, STYLE_NORMAL);
-    } else if (show_state) {
+      ssd1306_printFixed(0, y, buf, STYLE_NORMAL);
+      y += 8;
+    }
+    if (show_state) {
       ssd1306_setFixedFont(ssd1306xled_font6x8);
-      ssd1306_printFixed(0, 16, "dutycycle=   ", STYLE_NORMAL);
-      ssd1306_printFixed(60,16, ftoa(dutycycle*100), STYLE_NORMAL);
+      ssd1306_printFixed(0, y, "dutycycle=   ", STYLE_NORMAL);
+      ssd1306_printFixed(60,y, ftoa(dutycycle*100), STYLE_NORMAL);
+      y += 8;
       int n = sprintf(buf, "E_pid=%s,", ftoa(setpoint-cur_temp));
       n += sprintf(buf+n, "%s,", ftoa(err_i));
       sprintf(buf+n, "%s", ftoa(err_d));
-      ssd1306_printFixed(0, 24, buf, STYLE_NORMAL);
+      ssd1306_printFixed(0, y, buf, STYLE_NORMAL);
+      y += 8;
     }
 
     lastdraw = millis();
