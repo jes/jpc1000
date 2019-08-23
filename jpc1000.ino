@@ -252,8 +252,14 @@ void read_buttons() {
 }
 
 void heater(int state) {
+  static unsigned long last_switched;
+  if (state == heater_state)
+    return;
+  if (millis() < last_switched + min_time)
+    return;
   heater_state = state;
   digitalWrite(heater_pin, state);
+  last_switched = millis();
 }
 
 void pid_control() {
