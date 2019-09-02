@@ -193,6 +193,7 @@ void loop() {
   if (millis() > last_good_temp + 10000) {
     // 10s without a good reading
     cur_temp = NAN;
+    safe_to_operate = 0;
   }
 
   if (cur_temp < min_temp || cur_temp > max_temp)
